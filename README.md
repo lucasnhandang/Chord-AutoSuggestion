@@ -1,1 +1,1 @@
-# Chord-AutoSuggestion
+# Chord Auto-Suggestion
