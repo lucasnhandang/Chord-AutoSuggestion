@@ -130,55 +130,128 @@ function selectSong(songKey, songElement) {
 
 // Initialize YouTube player
 function initializeYouTubePlayer() {
-    if (!currentSong || !currentSong.youtube) return;
-    
-    const videoId = extractVideoId(currentSong.youtube);
-    if (!videoId) {
-        console.error('Invalid YouTube URL:', currentSong.youtube);
+    if (!currentSong || !currentSong.youtube) {
+        console.log('No currentSong or YouTube URL available');
         return;
     }
     
-    if (player) {
-        player.loadVideoById(videoId);
-    } else {
-        player = new YT.Player('youtubePlayer', {
-            height: '100%',
-            width: '100%',
-            videoId: videoId,
-            playerVars: {
-                'playsinline': 1,
-                'controls': 1,
-                'modestbranding': 1,
-                'rel': 0
-            },
-            events: {
-                'onReady': onPlayerReady,
-                'onStateChange': onPlayerStateChange
-            }
-        });
+    const videoId = extractVideoId(currentSong.youtube);
+    console.log('Extracted video ID:', videoId, 'from URL:', currentSong.youtube);
+    
+    if (!videoId) {
+        console.error('Invalid YouTube URL:', currentSong.youtube);
+        alert('Invalid YouTube URL. Please check the video link.');
+        return;
+    }
+    
+    // Wait for YouTube API to be ready
+    if (!window.YT || !window.YT.Player) {
+        console.log('YouTube API not ready yet, waiting...');
+        setTimeout(() => initializeYouTubePlayer(), 500);
+        return;
+    }
+    
+    try {
+        if (player && typeof player.loadVideoById === 'function') {
+            console.log('Loading new video in existing player:', videoId);
+            player.loadVideoById(videoId);
+        } else {
+            console.log('Creating new YouTube player for video:', videoId);
+            player = new YT.Player('youtubePlayer', {
+                height: '360',
+                width: '640',
+                videoId: videoId,
+                host: 'https://www.youtube.com',
+                playerVars: {
+                    'playsinline': 1,
+                    'controls': 1,
+                    'modestbranding': 1,
+                    'rel': 0,
+                    'enablejsapi': 1,
+                    'origin': window.location.origin
+                },
+                events: {
+                    'onReady': onPlayerReady,
+                    'onStateChange': onPlayerStateChange,
+                    'onError': onPlayerError
+                }
+            });
+        }
+    } catch (error) {
+        console.error('Error creating YouTube player:', error);
+        alert('Error loading YouTube player: ' + error.message);
     }
 }
 
 // Extract video ID from YouTube URL
 function extractVideoId(url) {
-    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
-    const match = url.match(regExp);
-    return (match && match[2].length === 11) ? match[2] : null;
+    if (!url) return null;
+    
+    console.log('Extracting video ID from URL:', url);
+    
+    // Handle different YouTube URL formats
+    const patterns = [
+        /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/v\/)([^#&?]*)/,
+        /^([a-zA-Z0-9_-]{11})$/  // Direct video ID
+    ];
+    
+    for (let pattern of patterns) {
+        const match = url.match(pattern);
+        if (match && match[1] && match[1].length === 11) {
+            console.log('Extracted video ID:', match[1]);
+            return match[1];
+        }
+    }
+    
+    console.error('Could not extract video ID from URL:', url);
+    return null;
 }
 
 // YouTube player ready callback
 function onPlayerReady(event) {
     console.log('YouTube player ready');
+    // Optionally start playing or perform other actions
 }
 
 // YouTube player state change callback
 function onPlayerStateChange(event) {
+    console.log('Player state changed:', event.data);
+    
     // Handle manual play/pause from YouTube controls
     if (event.data === YT.PlayerState.PLAYING && !isPlaying && offsetTime !== null) {
         startChordProgression();
     } else if (event.data === YT.PlayerState.PAUSED && isPlaying) {
         pauseChordProgression();
     }
+}
+
+// YouTube player error callback
+function onPlayerError(event) {
+    console.error('YouTube player error:', event.data);
+    
+    let errorMessage = 'YouTube player error: ';
+    switch (event.data) {
+        case 2:
+            errorMessage += 'Invalid video ID or video not found.';
+            break;
+        case 5:
+            errorMessage += 'HTML5 player error.';
+            break;
+        case 100:
+            errorMessage += 'Video not found or has been removed.';
+            break;
+        case 101:
+        case 150:
+            errorMessage += 'Video cannot be played in embedded players.';
+            break;
+        case 153:
+            errorMessage += 'Missing HTTP Referer header or API Client identification.';
+            break;
+        default:
+            errorMessage += 'Unknown error (code: ' + event.data + ')';
+    }
+    
+    alert(errorMessage);
 }
 
 // Set offset time (now directly called by play button)
@@ -609,11 +682,54 @@ function formatTime(seconds) {
     return `${minutes}:${secs.toString().padStart(2, '0')}`;
 }
 
+// Test YouTube video embedding
+function testYouTubeVideo() {
+    console.log('Testing YouTube video embedding...');
+    
+    if (!window.YT || !window.YT.Player) {
+        console.error('YouTube API not loaded');
+        return;
+    }
+    
+    // Test with a simple video ID
+    const testVideoId = 'dQw4w9WgXcQ'; // Rick Roll - a video that should always work
+    
+    try {
+        const testPlayer = new YT.Player('youtubePlayer', {
+            height: '360',
+            width: '640',
+            videoId: testVideoId,
+            playerVars: {
+                'controls': 1,
+                'enablejsapi': 1,
+                'origin': window.location.origin
+            },
+            events: {
+                'onReady': function(event) {
+                    console.log('Test YouTube player ready!');
+                },
+                'onError': function(event) {
+                    console.error('Test YouTube player error:', event.data);
+                }
+            }
+        });
+        
+        console.log('Test player created successfully');
+    } catch (error) {
+        console.error('Error creating test player:', error);
+    }
+}
+
 // Initialize app when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOM loaded');
+    
     // If YouTube API is already loaded, initialize
     if (window.YT && window.YT.Player) {
+        console.log('YouTube API already available, initializing app');
         initializeApp();
+    } else {
+        console.log('Waiting for YouTube API to load...');
     }
     // Otherwise, onYouTubeIframeAPIReady will be called
 });
