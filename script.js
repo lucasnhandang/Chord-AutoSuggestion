@@ -7,6 +7,8 @@ let offsetTime = null;
 let chordInterval = null;
 let currentChordIndex = -1;
 let selectedChordIndex = -1;
+let currentEditingSongKey = null;
+let offsetSet = false; // Track if offset has been set
 
 // Initialize when YouTube API is ready
 function onYouTubeIframeAPIReady() {
@@ -17,20 +19,23 @@ function onYouTubeIframeAPIReady() {
 // Initialize the application
 function initializeApp() {
     setupEventListeners();
-    // Start with the import screen - no auto loading of songs.json
-    showScreen('importScreen');
+    // Start with the welcome screen
+    showScreen('welcomeScreen');
     console.log('App initialized successfully');
 }
 
 // Show specific screen and hide others
 function showScreen(screenId) {
     // Hide all screens
-    document.getElementById('importScreen').style.display = 'none';
-    document.getElementById('songSelectionScreen').style.display = 'none';
-    document.getElementById('playerScreen').style.display = 'none';
+    const welcomeScreen = document.getElementById('welcomeScreen');
+    if (welcomeScreen) welcomeScreen.style.display = 'none';
+    
+    const playerScreen = document.getElementById('playerScreen');
+    if (playerScreen) playerScreen.style.display = 'none';
     
     // Show requested screen
-    document.getElementById(screenId).style.display = 'flex';
+    const targetScreen = document.getElementById(screenId);
+    if (targetScreen) targetScreen.style.display = 'flex';
 }
 
 // Load songs data from JSON file - now only called after user imports file
@@ -39,7 +44,9 @@ function loadSongsDataFromFile(jsonData) {
         songsData = JSON.parse(jsonData);
         console.log('Songs data loaded:', songsData);
         renderSongList();
-        showScreen('songSelectionScreen');
+        
+        // If user is on welcome screen and has imported songs, stay on welcome screen
+        // If user has imported songs, they can click on them in sidebar
     } catch (error) {
         console.error('Error parsing JSON data:', error);
         alert('Error parsing JSON file. Please check the file format.');
@@ -48,29 +55,21 @@ function loadSongsDataFromFile(jsonData) {
 
 // Setup event listeners
 function setupEventListeners() {
-    // Initial import button
-    document.getElementById('initialImportBtn').addEventListener('click', () => {
+    // Import button in sidebar
+    document.getElementById('importBtn').addEventListener('click', () => {
         document.getElementById('jsonFileInput').click();
     });
     
-    // Back to import button
-    document.getElementById('backToImportBtn').addEventListener('click', () => {
+    // Get Started button
+    document.getElementById('getStartedBtn').addEventListener('click', () => {
         document.getElementById('jsonFileInput').click();
-    });
-    
-    // Back to song selection button
-    document.getElementById('backToSongsBtn').addEventListener('click', () => {
-        showScreen('songSelectionScreen');
     });
     
     // File input change
     document.getElementById('jsonFileInput').addEventListener('change', handleFileImport);
     
-    // Play button (now used for setting offset)
-    document.getElementById('playPauseBtn').addEventListener('click', setOffset);
-    
-    // Pause button
-    document.getElementById('pauseBtn').addEventListener('click', togglePlayPause);
+    // Play/Pause button - dual functionality
+    document.getElementById('playPauseBtn').addEventListener('click', handlePlayPauseClick);
     
     // Reset offset button
     document.getElementById('resetOffsetBtn').addEventListener('click', handleResetOffset);
@@ -81,29 +80,87 @@ function setupEventListeners() {
     // Chord edit controls
     document.getElementById('deleteChordBtn').addEventListener('click', handleDeleteChord);
     document.getElementById('addChordBtn').addEventListener('click', handleAddChord);
+    
+    // YouTube URL preview controls
+    document.getElementById('youtubeUrlInput').addEventListener('input', handleYouTubeUrlInput);
+    document.getElementById('applyUrlBtn').addEventListener('click', applyYouTubeUrl);
+    document.getElementById('cancelUrlBtn').addEventListener('click', cancelYouTubeUrlEdit);
+}
+
+// Show/hide no songs message
+function showNoSongsMessage() {
+    const noSongsMessage = document.getElementById('noSongsMessage');
+    
+    if (!noSongsMessage) {
+        console.error('noSongsMessage element not found');
+        return;
+    }
+    
+    if (Object.keys(songsData).length === 0) {
+        noSongsMessage.style.display = 'block';
+    } else {
+        noSongsMessage.style.display = 'none';
+    }
 }
 
 // Render song list
 function renderSongList() {
     const songList = document.getElementById('songList');
-    songList.innerHTML = '';
+    const noSongsMessage = document.getElementById('noSongsMessage');
+    
+    if (!songList) {
+        console.error('songList element not found');
+        return;
+    }
+    
+    // Clear previous songs but keep no-songs message
+    const songItems = songList.querySelectorAll('.song-item');
+    songItems.forEach(item => item.remove());
+    
+    if (Object.keys(songsData).length === 0) {
+        if (noSongsMessage) {
+            noSongsMessage.style.display = 'block';
+        }
+        return;
+    }
+    
+    if (noSongsMessage) {
+        noSongsMessage.style.display = 'none';
+    }
     
     Object.keys(songsData).forEach(songKey => {
         const song = songsData[songKey];
         const songItem = document.createElement('div');
         songItem.className = 'song-item';
+        
+        const youtubeDisplay = song.youtube ? 
+            `<div class="youtube-url" title="${song.youtube}">${song.youtube}</div>` : 
+            '<div class="youtube-url" style="color: #999;">No YouTube URL</div>';
+            
         songItem.innerHTML = `
             <h4>${song.name}</h4>
             <p>Key: ${song.key} | BPM: ${song.bpm}</p>
+            ${youtubeDisplay}
+            <button class="edit-url-btn" onclick="editYouTubeUrl('${songKey}', event)">Edit URL</button>
         `;
-        songItem.addEventListener('click', () => selectSong(songKey, songItem));
+        songItem.addEventListener('click', (e) => {
+            // Don't select song if clicking on edit button
+            if (!e.target.classList.contains('edit-url-btn')) {
+                selectSong(songKey, songItem);
+            }
+        });
         songList.appendChild(songItem);
     });
 }
 
 // Select a song
 function selectSong(songKey, songElement) {
-    if (!songsData[songKey]) return;
+    if (!songsData[songKey]) {
+        console.error('Song not found:', songKey);
+        return;
+    }
+    
+    console.log('Selecting song:', songKey);
     
     // Update active song in list
     document.querySelectorAll('.song-item').forEach(item => item.classList.remove('active'));
@@ -112,6 +169,12 @@ function selectSong(songKey, songElement) {
     }
     
     currentSong = { key: songKey, ...songsData[songKey] };
+    
+    // Update song title in header
+    const titleElement = document.getElementById('currentSongTitle');
+    if (titleElement) {
+        titleElement.textContent = currentSong.name || songKey;
+    }
     
     // Initialize YouTube player
     initializeYouTubePlayer();
@@ -158,8 +221,8 @@ function initializeYouTubePlayer() {
         } else {
             console.log('Creating new YouTube player for video:', videoId);
             player = new YT.Player('youtubePlayer', {
-                height: '360',
-                width: '640',
+                height: '480', // Standard YouTube height for 854px width
+                width: '854',  // Standard YouTube width
                 videoId: videoId,
                 host: 'https://www.youtube.com',
                 playerVars: {
@@ -168,7 +231,11 @@ function initializeYouTubePlayer() {
                     'modestbranding': 1,
                     'rel': 0,
                     'enablejsapi': 1,
-                    'origin': window.location.origin
+                    'origin': window.location.origin,
+                    'fs': 1, // Allow fullscreen
+                    'cc_load_policy': 0, // Don't show captions by default
+                    'iv_load_policy': 3, // Hide annotations
+                    'disablekb': 0 // Enable keyboard controls
                 },
                 events: {
                     'onReady': onPlayerReady,
@@ -189,20 +256,39 @@ function extractVideoId(url) {
     
     console.log('Extracting video ID from URL:', url);
     
-    // Handle different YouTube URL formats
-    const patterns = [
-        /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/v\/)([^#&?]*)/,
-        /^([a-zA-Z0-9_-]{11})$/  // Direct video ID
-    ];
+    const value = url.trim();
     
-    for (let pattern of patterns) {
-        const match = url.match(pattern);
-        if (match && match[1] && match[1].length === 11) {
-            console.log('Extracted video ID:', match[1]);
-            return match[1];
+    // If it's already an 11-char ID (letters, numbers, _ or -)
+    const idMatch = value.match(/^[a-zA-Z0-9_-]{11}$/);
+    if (idMatch) return idMatch[0];
+
+    try {
+        // Try parsing as URL
+        const u = new URL(value);
+        
+        // Handle youtu.be format
+        if (/youtu\.be$/.test(u.hostname)) {
+            const maybe = u.pathname.split('/').filter(Boolean).shift();
+            if (maybe && /^[a-zA-Z0-9_-]{11}$/.test(maybe)) return maybe;
         }
-    }
-    
+        
+        // Handle youtube.com format
+        if (/(youtube\.com)$/.test(u.hostname)) {
+            // Standard watch URL: v param
+            const v = u.searchParams.get('v');
+            if (v && /^[a-zA-Z0-9_-]{11}$/.test(v)) return v;
+            
+            // Shorts URL: /shorts/ID
+            const parts = u.pathname.split('/').filter(Boolean);
+            const idx = parts.indexOf('shorts');
+            if (idx !== -1 && parts[idx+1] && /^[a-zA-Z0-9_-]{11}$/.test(parts[idx+1])) return parts[idx+1];
+            
+            // Embed URL: /embed/ID
+            const eidx = parts.indexOf('embed');
+            if (eidx !== -1 && parts[eidx+1] && /^[a-zA-Z0-9_-]{11}$/.test(parts[eidx+1])) return parts[eidx+1];
+        }
+    } catch {}
+
     console.error('Could not extract video ID from URL:', url);
     return null;
 }
@@ -254,23 +340,49 @@ function onPlayerError(event) {
     alert(errorMessage);
 }
 
-// Set offset time (now directly called by play button)
-function setOffset() {
+// Handle Play/Pause button click - dual functionality
+function handlePlayPauseClick() {
     if (!currentSong || !player) {
         alert('Please select a song first.');
         return;
     }
     
-    const currentTime = player.getCurrentTime();
-    offsetTime = currentTime;
+    if (!offsetSet) {
+        // First click: Set offset and start playing
+        setOffset();
+    } else {
+        // Subsequent clicks: Toggle play/pause
+        togglePlayPause();
+    }
+}
+
+// Set offset time (called on first play button click)
+function setOffset() {
+    // Set offset to 0 and start video from beginning
+    offsetTime = 0;
+    offsetSet = true;
     
-    document.getElementById('offsetDisplay').textContent = `Offset: ${formatTime(offsetTime)}`;
-    document.getElementById('resetOffsetBtn').style.display = 'inline-block';
+    // Seek to beginning of video
+    player.seekTo(0, true);
     
-    // Start playing
+    const offsetDisplay = document.getElementById('offsetDisplay');
+    if (offsetDisplay) {
+        offsetDisplay.textContent = `Offset: ${formatTime(offsetTime)}`;
+    }
+    
+    const resetOffsetBtn = document.getElementById('resetOffsetBtn');
+    if (resetOffsetBtn) {
+        resetOffsetBtn.style.display = 'inline-block';
+    }
+    
+    // Update button appearance
+    updatePlayPauseButton();
+    
+    // Start playing the video and chord progression
+    player.playVideo();
     startChordProgression();
     
-    console.log('Offset set to:', offsetTime);
+    console.log('Offset set to:', offsetTime, 'and video started from beginning');
 }
 
 // Toggle play/pause
@@ -282,6 +394,26 @@ function togglePlayPause() {
         startChordProgression();
         player.playVideo();
     }
+    updatePlayPauseButton();
+}
+
+// Update Play/Pause button appearance
+function updatePlayPauseButton() {
+    const btn = document.getElementById('playPauseBtn');
+    
+    if (!offsetSet) {
+        // Before offset is set
+        btn.textContent = '⏯️';
+        btn.title = 'Set offset and start playing';
+    } else if (isPlaying) {
+        // Currently playing
+        btn.textContent = '⏸️';
+        btn.title = 'Pause';
+    } else {
+        // Paused (after offset set)
+        btn.textContent = '▶️';
+        btn.title = 'Play';
+    }
 }
 
 // Start chord progression
@@ -289,7 +421,7 @@ function startChordProgression() {
     if (!currentSong || offsetTime === null) return;
     
     isPlaying = true;
-    document.getElementById('playPauseBtn').textContent = '⏸️';
+    updatePlayPauseButton();
     
     // Calculate beat duration in milliseconds
     const beatDuration = (60 / currentSong.bpm) * 1000;
@@ -317,7 +449,7 @@ function startChordProgression() {
 // Pause chord progression
 function pauseChordProgression() {
     isPlaying = false;
-    document.getElementById('playPauseBtn').textContent = '▶️';
+    updatePlayPauseButton();
     
     if (chordInterval) {
         clearInterval(chordInterval);
@@ -331,11 +463,23 @@ function pauseChordProgression() {
 function updateActiveChord(index) {
     if (index === currentChordIndex) return;
     
+    const prevChordIndex = currentChordIndex;
+    let isChordChange = false;
+    
+    // Check if this is a chord change (different chord value)
+    if (prevChordIndex >= 0 && currentSong && currentSong.chords) {
+        const prevChordValue = currentSong.chords[prevChordIndex];
+        const currentChordValue = currentSong.chords[index];
+        if (prevChordValue && currentChordValue && prevChordValue !== currentChordValue) {
+            isChordChange = true;
+        }
+    }
+    
     // Remove previous active chord
     if (currentChordIndex >= 0) {
         const prevChord = document.querySelector(`[data-chord-index="${currentChordIndex}"]`);
         if (prevChord) {
-            prevChord.classList.remove('active');
+            prevChord.classList.remove('active', 'chord-transition', 'different-chord');
         }
     }
     
@@ -343,6 +487,18 @@ function updateActiveChord(index) {
     currentChordIndex = index;
     const currentChord = document.querySelector(`[data-chord-index="${index}"]`);
     if (currentChord) {
+        if (isChordChange) {
+            // Add transition effect for chord changes
+            currentChord.classList.add('chord-transition');
+            
+            // Remove transition class after animation completes
+            setTimeout(() => {
+                if (currentChord.classList.contains('chord-transition')) {
+                    currentChord.classList.remove('chord-transition');
+                }
+            }, 500);
+        }
+        
         currentChord.classList.add('active');
         
         // Scroll into view
@@ -358,24 +514,85 @@ function updateActiveChord(index) {
 function resetPlayerState() {
     pauseChordProgression();
     offsetTime = null;
+    offsetSet = false;
     currentChordIndex = -1;
     selectedChordIndex = -1;
     
-    document.getElementById('offsetDisplay').textContent = 'Offset: Not set';
-    document.getElementById('resetOffsetBtn').style.display = 'none';
-    document.getElementById('playPauseBtn').textContent = '▶️';
-    document.getElementById('chordEditControls').style.display = 'none';
+    const offsetDisplay = document.getElementById('offsetDisplay');
+    if (offsetDisplay) {
+        offsetDisplay.textContent = 'Offset: Not set';
+    }
     
-    // Remove all active and selected classes
+    const resetOffsetBtn = document.getElementById('resetOffsetBtn');
+    if (resetOffsetBtn) {
+        resetOffsetBtn.style.display = 'none';
+    }
+    
+    const chordEditControls = document.getElementById('chordEditControls');
+    if (chordEditControls) {
+        chordEditControls.style.display = 'none';
+    }
+    
+    // Update button appearance
+    updatePlayPauseButton();
+    
+    // Remove all active, selected, and transition classes
     document.querySelectorAll('.chord-box').forEach(box => {
-        box.classList.remove('active', 'selected');
+        box.classList.remove('active', 'selected', 'chord-transition', 'different-chord');
     });
 }
 
-// Handle reset offset
 function handleResetOffset() {
-    resetPlayerState();
-    console.log('Offset reset');
+    if (!currentSong || !player) {
+        alert('Please select a song first.');
+        return;
+    }
+    
+    // Stop current chord progression
+    pauseChordProgression();
+    
+    // Set new offset at current video time
+    const currentTime = player.getCurrentTime();
+    offsetTime = currentTime;
+    offsetSet = true; // Important: keep offset as set
+    
+    // Pause the video at current time
+    player.pauseVideo();
+    
+    // Update offset display
+    const offsetDisplay = document.getElementById('offsetDisplay');
+    if (offsetDisplay) {
+        offsetDisplay.textContent = `Offset: ${formatTime(offsetTime)}`;
+    }
+    
+    // Keep reset button visible since offset is still set
+    const resetOffsetBtn = document.getElementById('resetOffsetBtn');
+    if (resetOffsetBtn) {
+        resetOffsetBtn.style.display = 'inline-block';
+    }
+    
+    // Reset chord progression state but keep offset
+    currentChordIndex = -1;
+    selectedChordIndex = -1;
+    
+    // Remove all active, selected, and transition classes
+    document.querySelectorAll('.chord-box').forEach(box => {
+        box.classList.remove('active', 'selected', 'chord-transition', 'different-chord');
+    });
+    
+    // Hide chord edit controls
+    const chordEditControls = document.getElementById('chordEditControls');
+    if (chordEditControls) {
+        chordEditControls.style.display = 'none';
+    }
+    
+    // Update button appearance (will show play button since video is paused)
+    updatePlayPauseButton();
+    
+    console.log('Offset reset to current time:', offsetTime, 'and video paused');
+    
+    // Show success notification
+    showToast(`Offset reset to ${formatTime(offsetTime)} and video paused`, 'success');
 }
 
 // Render chord track
@@ -395,9 +612,19 @@ function renderChordTrack() {
         return;
     }
     
-    // Clear existing content
+    // Clear existing content and reset selection state
     chordTrack.innerHTML = '';
     console.log('Cleared chord track');
+    
+    // If selectedChordIndex is now out of bounds, reset it
+    if (selectedChordIndex >= currentSong.chords.length) {
+        console.log('Resetting selectedChordIndex from', selectedChordIndex, 'to -1 (out of bounds)');
+        selectedChordIndex = -1;
+        const chordEditControls = document.getElementById('chordEditControls');
+        if (chordEditControls) {
+            chordEditControls.style.display = 'none';
+        }
+    }
     
     currentSong.chords.forEach((chord, index) => {
         const chordBox = document.createElement('div');
@@ -433,6 +660,19 @@ function renderChordTrack() {
     // Verify DOM was updated
     const renderedBoxes = chordTrack.querySelectorAll('.chord-box');
     console.log('Actual chord boxes in DOM:', renderedBoxes.length);
+    
+    // Restore selection if still valid
+    if (selectedChordIndex >= 0 && selectedChordIndex < currentSong.chords.length) {
+        const selectedChord = document.querySelector(`[data-chord-index="${selectedChordIndex}"]`);
+        if (selectedChord) {
+            selectedChord.classList.add('selected');
+            const chordEditControls = document.getElementById('chordEditControls');
+            if (chordEditControls) {
+                chordEditControls.style.display = 'flex';
+            }
+            console.log('Restored selection to index:', selectedChordIndex);
+        }
+    }
 }
 
 // Start editing a chord
@@ -479,11 +719,20 @@ function startEditingChord(chordBox, index) {
 
 // Select a chord for editing
 function selectChord(index) {
+    console.log('selectChord called with index:', index);
+    
+    // Validate index
+    if (index < 0 || !currentSong || index >= currentSong.chords.length) {
+        console.error('Invalid chord index:', index, 'Song length:', currentSong?.chords?.length);
+        return;
+    }
+    
     // Remove previous selection
     if (selectedChordIndex >= 0) {
         const prevSelected = document.querySelector(`[data-chord-index="${selectedChordIndex}"]`);
         if (prevSelected) {
             prevSelected.classList.remove('selected');
+            console.log('Removed selection from index:', selectedChordIndex);
         }
     }
     
@@ -492,10 +741,16 @@ function selectChord(index) {
     const selectedChord = document.querySelector(`[data-chord-index="${index}"]`);
     if (selectedChord) {
         selectedChord.classList.add('selected');
+        console.log('Added selection to index:', index);
+    } else {
+        console.error('Could not find chord element with index:', index);
     }
     
     // Show edit controls
-    document.getElementById('chordEditControls').style.display = 'flex';
+    const chordEditControls = document.getElementById('chordEditControls');
+    if (chordEditControls) {
+        chordEditControls.style.display = 'flex';
+    }
     
     console.log('Selected chord:', index, currentSong.chords[index]);
 }
@@ -524,27 +779,50 @@ function updateChord(index, newValue) {
 // Handle delete chord
 function handleDeleteChord() {
     if (selectedChordIndex < 0 || !currentSong) {
-        alert('Vui lòng chọn một hợp âm để xóa.');
+        alert('Please select a chord to delete.');
         return;
     }
     
     if (currentSong.chords.length <= 1) {
-        alert('Không thể xóa hợp âm cuối cùng.');
+        alert('Cannot delete the last chord.');
         return;
     }
     
+    // Store the index before deletion for logging
+    const deletedIndex = selectedChordIndex;
+    const deletedChord = currentSong.chords[selectedChordIndex];
+    
+    console.log('Deleting chord:', deletedChord, 'at index', deletedIndex);
+    console.log('Chords before delete:', JSON.stringify(currentSong.chords.slice(Math.max(0, deletedIndex - 2), deletedIndex + 3)));
+    
     // Remove chord from arrays (this connects the chord after to the chord before)
     currentSong.chords.splice(selectedChordIndex, 1);
-    songsData[currentSong.key].chords.splice(selectedChordIndex, 1);
+    
+    // Safely update the songsData
+    if (currentSong.key && songsData[currentSong.key] && songsData[currentSong.key].chords) {
+        songsData[currentSong.key].chords.splice(selectedChordIndex, 1);
+    } else {
+        console.error('Cannot update songsData - key or chords missing');
+        console.log('currentSong.key:', currentSong.key);
+        console.log('songsData keys:', Object.keys(songsData));
+    }
+    
+    console.log('Chords after delete:', JSON.stringify(currentSong.chords.slice(Math.max(0, deletedIndex - 2), deletedIndex + 2)));
     
     // Re-render chord track
     renderChordTrack();
     
     // Reset selection and hide controls
     selectedChordIndex = -1;
-    document.getElementById('chordEditControls').style.display = 'none';
+    const chordEditControls = document.getElementById('chordEditControls');
+    if (chordEditControls) {
+        chordEditControls.style.display = 'none';
+    }
     
-    console.log('Deleted chord at index', selectedChordIndex);
+    console.log('Successfully deleted chord', deletedChord, 'at index', deletedIndex);
+    
+    // Show success notification
+    showToast(`Chord "${deletedChord}" deleted successfully!`, 'success');
 }
 
 // Handle add chord
@@ -552,7 +830,7 @@ function handleAddChord() {
     console.log('handleAddChord called!'); // Debug line
     
     if (selectedChordIndex < 0 || !currentSong) {
-        alert('Vui lòng chọn một hợp âm để thêm hợp âm mới vào trước đó.');
+        alert('Please select a chord to add a new chord before it.');
         return;
     }
     
@@ -592,7 +870,10 @@ function handleAddChord() {
     
     // Clear previous selection
     selectedChordIndex = -1;
-    document.getElementById('chordEditControls').style.display = 'none';
+    const chordEditControls = document.getElementById('chordEditControls');
+    if (chordEditControls) {
+        chordEditControls.style.display = 'none';
+    }
     
     // Wait for DOM to update, then select and edit the new chord
     setTimeout(() => {
@@ -720,6 +1001,110 @@ function testYouTubeVideo() {
     }
 }
 
+// YouTube URL editing functions
+function editYouTubeUrl(songKey, event) {
+    event.stopPropagation();
+    
+    currentEditingSongKey = songKey;
+    const song = songsData[songKey];
+    
+    // Show preview section
+    const youtubePreviewSection = document.getElementById('youtubePreviewSection');
+    if (youtubePreviewSection) {
+        youtubePreviewSection.style.display = 'block';
+    }
+    
+    // Pre-fill input with current URL
+    const youtubeUrlInput = document.getElementById('youtubeUrlInput');
+    if (youtubeUrlInput) {
+        youtubeUrlInput.value = song.youtube || '';
+        
+        // Focus on input
+        youtubeUrlInput.focus();
+    }
+    
+    // If there's already a URL, show preview
+    if (song.youtube) {
+        updateYouTubePreview(song.youtube);
+    } else {
+        clearYouTubePreview();
+    }
+}
+
+function handleYouTubeUrlInput(event) {
+    const url = event.target.value.trim();
+    if (url) {
+        // Debounce the preview update
+        clearTimeout(handleYouTubeUrlInput.timeout);
+        handleYouTubeUrlInput.timeout = setTimeout(() => {
+            updateYouTubePreview(url);
+        }, 500);
+    } else {
+        clearYouTubePreview();
+    }
+}
+
+function updateYouTubePreview(url) {
+    const videoId = extractVideoId(url);
+    const previewContainer = document.getElementById('youtubePreview');
+    
+    if (videoId) {
+        const embedUrl = `https://www.youtube.com/embed/${videoId}?rel=0`;
+        previewContainer.innerHTML = `<iframe src="${embedUrl}" allowfullscreen></iframe>`;
+    } else {
+        previewContainer.innerHTML = '<div class="placeholder">Invalid YouTube URL or Video ID</div>';
+    }
+}
+
+function clearYouTubePreview() {
+    const previewContainer = document.getElementById('youtubePreview');
+    previewContainer.innerHTML = '<div class="placeholder">Enter a YouTube URL or Video ID to see preview</div>';
+}
+
+function applyYouTubeUrl() {
+    if (!currentEditingSongKey) return;
+    
+    const newUrl = document.getElementById('youtubeUrlInput').value.trim();
+    const videoId = extractVideoId(newUrl);
+    
+    if (newUrl && !videoId) {
+        alert('Please enter a valid YouTube URL or Video ID');
+        return;
+    }
+    
+    // Update the song data
+    if (newUrl) {
+        // Always store as embed URL for consistency
+        songsData[currentEditingSongKey].youtube = `https://www.youtube.com/embed/${videoId}`;
+    } else {
+        // Remove URL if empty
+        delete songsData[currentEditingSongKey].youtube;
+    }
+    
+    // Re-render song list to show updated URL
+    renderSongList();
+    
+    // Hide preview section
+    cancelYouTubeUrlEdit();
+    
+    console.log('Updated YouTube URL for song:', currentEditingSongKey);
+}
+
+function cancelYouTubeUrlEdit() {
+    const youtubePreviewSection = document.getElementById('youtubePreviewSection');
+    if (youtubePreviewSection) {
+        youtubePreviewSection.style.display = 'none';
+    }
+    
+    const youtubeUrlInput = document.getElementById('youtubeUrlInput');
+    if (youtubeUrlInput) {
+        youtubeUrlInput.value = '';
+    }
+    
+    clearYouTubePreview();
+    currentEditingSongKey = null;
+}
+
 // Initialize app when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
     console.log('DOM loaded');
@@ -733,3 +1118,35 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     // Otherwise, onYouTubeIframeAPIReady will be called
 });
+
+// Show toast notification
+function showToast(message, type = 'success') {
+    // Remove any existing toast
+    const existingToast = document.querySelector('.toast-notification');
+    if (existingToast) {
+        existingToast.remove();
+    }
+    
+    // Create toast element
+    const toast = document.createElement('div');
+    toast.className = `toast-notification toast-${type}`;
+    toast.textContent = message;
+    
+    // Add to body
+    document.body.appendChild(toast);
+    
+    // Show with animation
+    setTimeout(() => {
+        toast.classList.add('show');
+    }, 100);
+    
+    // Remove after 3 seconds
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => {
+            if (toast.parentNode) {
+                toast.parentNode.removeChild(toast);
+            }
+        }, 300);
+    }, 3000);
+}

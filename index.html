@@ -7,60 +7,113 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div class="container">
-        <!-- Initial Import Screen (shown by default) -->
-        <div id="importScreen" class="import-screen">
-            <h1>Chord Auto-Suggestion Audit Tool</h1>
-            <p>Please import JSON file to start!</p>
-            <div class="import-controls">
-                <button id="initialImportBtn" class="btn btn-large">Import File</button>
-                <input type="file" id="jsonFileInput" accept=".json" style="display: none;">
-            </div>
-        </div>
-        
-        <!-- Song Selection Screen (shown after import) -->
-        <div id="songSelectionScreen" class="song-selection-screen" style="display: none;">
-            <h2>Select a song</h2>
-            <div id="songList" class="song-list">
-                <!-- Songs will be loaded here -->
-            </div>
-            <div class="selection-controls">
-                <button id="backToImportBtn" class="btn">Import another file</button>
-                <button id="saveBtn" class="btn">Save file</button>
-            </div>
-        </div>
-
-        <!-- Player Screen (shown after song selection) -->
-        <div id="playerScreen" class="player-screen" style="display: none;">
-            <!-- Video Player -->
-            <div class="video-container">
-                <div id="youtubePlayer"></div>
-            </div>
-            
-            <!-- Player Controls -->
-            <div class="player-controls">
-                <button id="playPauseBtn" class="control-btn">⏺</button>
-                <button id="pauseBtn" class="control-btn">⏸</button>
-                <button id="backToSongsBtn" class="control-btn">🔙</button>
-                <span id="offsetDisplay" class="offset-display">Offset: Not set</span>
-                <button id="resetOffsetBtn" class="control-btn" style="display: none;">⏺️</button>
-            </div>
-
-            <!-- Chord Track -->
-            <div class="chord-track-container">
-                <div id="chordTrack" class="chord-track">
-                    <!-- Chords will be displayed here -->
+    <div class="app-layout">
+        <!-- Sidebar for song list -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h3>Songs</h3>
+                <div class="sidebar-controls">
+                    <button id="importBtn" class="btn btn-small">Import</button>
+                    <button id="saveBtn" class="btn btn-small">Save</button>
+                    <input type="file" id="jsonFileInput" accept=".json" style="display: none;">
                 </div>
             </div>
             
-            <!-- Chord Edit Controls (Hidden until chord is selected) -->
-            <div id="chordEditControls" class="chord-edit-controls" style="display: none;">
-                <button id="deleteChordBtn" class="btn">Delete</button>
-                <button id="addChordBtn" class="btn">Add</button>
+            <!-- Song List -->
+            <div id="songList" class="song-list">
+                <!-- Fallback content when no songs loaded -->
+                <div id="noSongsMessage" class="no-songs-message">
+                    <p>No songs loaded</p>
+                    <p>Click "Import" to load JSON file</p>
+                </div>
+            </div>
+            
+            <!-- YouTube URL Preview Section -->
+            <div id="youtubePreviewSection" class="youtube-preview-section" style="display: none;">
+                <h4>YouTube URL Preview</h4>
+                <div class="url-input-section">
+                    <input type="text" id="youtubeUrlInput" placeholder="Enter YouTube URL or Video ID" class="youtube-url-input">
+                    <button id="applyUrlBtn" class="btn btn-apply">Apply</button>
+                    <button id="cancelUrlBtn" class="btn btn-cancel">Cancel</button>
+                </div>
+                <div class="preview-container">
+                    <div id="youtubePreview" class="youtube-preview">
+                        <!-- Preview iframe will be loaded here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main content area -->
+        <div class="main-content">
+            <!-- Welcome Screen (shown by default) -->
+            <div id="welcomeScreen" class="welcome-screen">
+                <div class="welcome-content">
+                    <h1>Chord Auto-Suggestion Audit Tool</h1>
+                    <p>Import a JSON file with song data to get started!</p>
+                    <div class="welcome-features">
+                        <div class="feature">
+                            <h3>🎵 Song Management</h3>
+                            <p>Load and manage your song collection</p>
+                        </div>
+                        <div class="feature">
+                            <h3>🎬 YouTube Integration</h3>
+                            <p>Live preview and edit YouTube URLs</p>
+                        </div>
+                        <div class="feature">
+                            <h3>🎼 Chord Editing</h3>
+                            <p>Edit chords and sync with audio</p>
+                        </div>
+                    </div>
+                    <button id="getStartedBtn" class="btn btn-large">Get Started</button>
+                </div>
+            </div>
+
+            <!-- Player Screen (shown after song selection) -->
+            <div id="playerScreen" class="player-screen" style="display: none;">
+                <!-- Header -->
+                <div class="player-header">
+                    <h2 id="currentSongTitle">Select a song to start</h2>
+                </div>
+                
+                <!-- Video Player -->
+                <div class="video-container">
+                    <div id="youtubePlayer"></div>
+                </div>
+                
+                <!-- Player Controls -->
+                <div class="player-controls">
+                    <button id="playPauseBtn" class="control-btn main-control">⏯️</button>
+                    <button id="resetOffsetBtn" class="control-btn reset-control" style="display: none;">⏺️</button>
+                    <span id="offsetDisplay" class="offset-display">Offset: Not set</span>
+                </div>
+
+                <!-- Chord Track -->
+                <div class="chord-track-container">
+                    <div id="chordTrack" class="chord-track">
+                        <!-- Chords will be displayed here -->
+                    </div>
+                </div>
+                
+                <!-- Chord Edit Controls (Hidden until chord is selected) -->
+                <div id="chordEditControls" class="chord-edit-controls" style="display: none;">
+                    <button id="deleteChordBtn" class="btn">Delete</button>
+                    <button id="addChordBtn" class="btn">Add</button>
+                </div>
             </div>
         </div>
     </div>
 
+    <!-- HTTPS Enforcement for YouTube embeds -->
+    <script>
+        // Force HTTPS except for local dev so the embed plays in modern browsers
+        (function enforceHTTPS(){
+            if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+                location.replace('https:' + location.href.substring(location.protocol.length));
+            }
+        })();
+    </script>
+    
     <!-- YouTube API -->
     <script src="https://www.youtube.com/iframe_api"></script>
     <script src="script.js"></script>

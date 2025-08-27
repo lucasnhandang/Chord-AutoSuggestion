@@ -1,0 +1,8 @@
+# SSL certificates
+*.pem
+
+# Node modules
+node_modules/
+
+# Local storage
+local-storage.json
