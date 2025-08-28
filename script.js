@@ -920,18 +920,6 @@ function handleDeleteChord() {
     // Remove chord from arrays (this connects the chord after to the chord before)
     currentSong.chords.splice(selectedChordIndex, 1);
 
-    // Safely update the songsData
-    if (
-        currentSong._name && songsData[currentSong._name] &&
-        songsData[currentSong._name].chords
-    ) {
-        songsData[currentSong._name].chords.splice(selectedChordIndex, 1);
-    } else {
-        console.error("Cannot update songsData - key or chords missing");
-        console.log("currentSong._name:", currentSong._name);
-        console.log("songsData keys:", Object.keys(songsData));
-    }
-
     console.log(
         "Chords after delete:",
         JSON.stringify(
