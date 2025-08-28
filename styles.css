@@ -6,7 +6,7 @@
 }
 
 body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-family: 'Roboto', sans-serif;
     background: #f0f0f0;
     min-height: 100vh;
     color: #333;
@@ -334,11 +334,11 @@ body {
     background: #333;
     color: #fff;
     border-color: #333;
-    animation: pulse 0.3s ease-in-out;
+    animation: pulse 0.2s ease-in-out;
 }
 
 .chord-box.chord-transition {
-    animation: chordTransition 0.5s ease-in-out;
+    animation: chordTransition 0.2s ease-in-out;
     border-width: 3px;
 }
 
