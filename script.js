@@ -42,6 +42,14 @@ function showScreen(screenId) {
 function loadSongsDataFromFile(jsonData) {
     try {
         songsData = JSON.parse(jsonData);
+        
+        // Ensure all songs have isAudited property (default to false if not present)
+        Object.keys(songsData).forEach(songKey => {
+            if (!songsData[songKey].hasOwnProperty('isAudited')) {
+                songsData[songKey].isAudited = false;
+            }
+        });
+        
         console.log("Songs data loaded:", songsData);
         renderSongList();
 
@@ -96,19 +104,41 @@ function setupEventListeners() {
         handleAddChord,
     );
 
-    // YouTube URL preview controls
-    document.getElementById("youtubeUrlInput").addEventListener(
-        "input",
-        handleYouTubeUrlInput,
-    );
-    document.getElementById("applyUrlBtn").addEventListener(
+
+
+    // Dark mode toggle
+    document.getElementById("themeToggle").addEventListener(
         "click",
-        applyYouTubeUrl,
+        toggleTheme,
     );
-    document.getElementById("cancelUrlBtn").addEventListener(
+
+    // Song edit dialog controls
+    document.getElementById("closeSongDialog").addEventListener(
         "click",
-        cancelYouTubeUrlEdit,
+        closeSongEditDialog,
     );
+    document.getElementById("cancelSongEdit").addEventListener(
+        "click",
+        closeSongEditDialog,
+    );
+    document.getElementById("saveSongEdit").addEventListener(
+        "click",
+        saveSongEdit,
+    );
+
+    // Make checkbox container clickable
+    const checkboxContainer = document.querySelector('.checkbox-container');
+    if (checkboxContainer) {
+        checkboxContainer.addEventListener('click', function() {
+            const checkbox = document.getElementById('songAudited');
+            checkbox.checked = !checkbox.checked;
+        });
+    }
+
+    // Initialize theme from localStorage
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    updateThemeToggle(savedTheme);
 }
 
 // Show/hide no songs message
@@ -157,19 +187,23 @@ function renderSongList() {
         const songItem = document.createElement("div");
         songItem.className = "song-item";
 
-        const youtubeDisplay = song.youtube
-            ? `<div class="youtube-url" title="${song.youtube}">${song.youtube}</div>`
-            : '<div class="youtube-url" style="color: #999;">No YouTube URL</div>';
+        const auditedBadge = song.isAudited 
+            ? '<span class="audited-badge">Audited</span>' 
+            : '';
 
         songItem.innerHTML = `
-            <h4>${song.name}</h4>
+            <div class="song-header">
+                <h4>${song.name}</h4>
+                <button class="edit-song-btn" onclick="openSongEditDialog('${songKey}', event)">Edit</button>
+            </div>
             <p>Key: ${song.key} | BPM: ${song.bpm}</p>
-            ${youtubeDisplay}
-            <button class="edit-url-btn" onclick="editYouTubeUrl('${songKey}', event)">Edit URL</button>
+            <div class="song-status">
+                ${auditedBadge}
+            </div>
         `;
         songItem.addEventListener("click", (e) => {
             // Don't select song if clicking on edit button
-            if (!e.target.classList.contains("edit-url-btn")) {
+            if (!e.target.classList.contains("edit-song-btn")) {
                 selectSong(songKey, songItem);
             }
         });
@@ -1143,116 +1177,130 @@ function testYouTubeVideo() {
     }
 }
 
-// YouTube URL editing functions
-function editYouTubeUrl(songKey, event) {
+
+
+// Dark mode toggle functions
+function toggleTheme() {
+    const currentTheme = document.documentElement.getAttribute('data-theme');
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    
+    document.documentElement.setAttribute('data-theme', newTheme);
+    localStorage.setItem('theme', newTheme);
+    updateThemeToggle(newTheme);
+}
+
+function updateThemeToggle(theme) {
+    const toggle = document.getElementById('themeToggle');
+    const icon = toggle.querySelector('.icon');
+    const text = toggle.querySelector('.text');
+    
+    if (theme === 'dark') {
+        icon.textContent = '☀️';
+        text.textContent = 'Light';
+    } else {
+        icon.textContent = '🌙';
+        text.textContent = 'Dark';
+    }
+}
+
+// Song edit dialog functions
+let currentEditingSong = null;
+
+function openSongEditDialog(songKey, event) {
+    event.preventDefault();
     event.stopPropagation();
-
-    currentEditingSongKey = songKey;
+    
     const song = songsData[songKey];
-
-    // Show preview section
-    const youtubePreviewSection = document.getElementById(
-        "youtubePreviewSection",
-    );
-    if (youtubePreviewSection) {
-        youtubePreviewSection.style.display = "block";
-    }
-
-    // Pre-fill input with current URL
-    const youtubeUrlInput = document.getElementById("youtubeUrlInput");
-    if (youtubeUrlInput) {
-        youtubeUrlInput.value = song.youtube || "";
-
-        // Focus on input
-        youtubeUrlInput.focus();
-    }
-
-    // If there's already a URL, show preview
-    if (song.youtube) {
-        updateYouTubePreview(song.youtube);
-    } else {
-        clearYouTubePreview();
-    }
-}
-
-function handleYouTubeUrlInput(event) {
-    const url = event.target.value.trim();
-    if (url) {
-        // Debounce the preview update
-        clearTimeout(handleYouTubeUrlInput.timeout);
-        handleYouTubeUrlInput.timeout = setTimeout(() => {
-            updateYouTubePreview(url);
-        }, 500);
-    } else {
-        clearYouTubePreview();
-    }
-}
-
-function updateYouTubePreview(url) {
-    const videoId = extractVideoId(url);
-    const previewContainer = document.getElementById("youtubePreview");
-
-    if (videoId) {
-        const embedUrl = `https://www.youtube.com/embed/${videoId}?rel=0`;
-        previewContainer.innerHTML =
-            `<iframe src="${embedUrl}" allowfullscreen></iframe>`;
-    } else {
-        previewContainer.innerHTML =
-            '<div class="placeholder">Invalid YouTube URL or Video ID</div>';
-    }
-}
-
-function clearYouTubePreview() {
-    const previewContainer = document.getElementById("youtubePreview");
-    previewContainer.innerHTML =
-        '<div class="placeholder">Enter a YouTube URL or Video ID to see preview</div>';
-}
-
-function applyYouTubeUrl() {
-    if (!currentEditingSongKey) return;
-
-    const newUrl = document.getElementById("youtubeUrlInput").value.trim();
-    const videoId = extractVideoId(newUrl);
-
-    if (newUrl && !videoId) {
-        alert("Please enter a valid YouTube URL or Video ID");
+    if (!song) {
+        showToast('Song not found', 'error');
         return;
     }
-
-    // Update the song data
-    if (newUrl) {
-        // Always store as embed URL for consistency
-        songsData[currentEditingSongKey].youtube =
-            `https://www.youtube.com/embed/${videoId}`;
-    } else {
-        // Remove URL if empty
-        delete songsData[currentEditingSongKey].youtube;
-    }
-
-    // Re-render song list to show updated URL
-    renderSongList();
-
-    // Hide preview section
-    cancelYouTubeUrlEdit();
-
-    console.log("Updated YouTube URL for song:", currentEditingSongKey);
+    
+    currentEditingSong = songKey;
+    
+    // Populate form fields
+    document.getElementById('songName').value = song.name || '';
+    document.getElementById('songKey').value = song.key || '';
+    document.getElementById('songYoutube').value = song.youtube || '';
+    document.getElementById('songBpm').value = song.bpm || '';
+    document.getElementById('songOffset').value = song.offset || '';
+    document.getElementById('songAudited').checked = song.isAudited || false;
+    
+    // Show dialog
+    document.getElementById('songEditDialog').style.display = 'flex';
 }
 
-function cancelYouTubeUrlEdit() {
-    const youtubePreviewSection = document.getElementById(
-        "youtubePreviewSection",
-    );
-    if (youtubePreviewSection) {
-        youtubePreviewSection.style.display = "none";
-    }
+function closeSongEditDialog() {
+    document.getElementById('songEditDialog').style.display = 'none';
+    currentEditingSong = null;
+}
 
-    const youtubeUrlInput = document.getElementById("youtubeUrlInput");
-    if (youtubeUrlInput) {
-        youtubeUrlInput.value = "";
+function saveSongEdit() {
+    if (!currentEditingSong) {
+        showToast('No song selected for editing', 'error');
+        return;
     }
-
-    clearYouTubePreview();
-    currentEditingSongKey = null;
+    
+    const song = songsData[currentEditingSong];
+    if (!song) {
+        showToast('Song not found', 'error');
+        return;
+    }
+    
+    // Get form values
+    const newName = document.getElementById('songName').value.trim();
+    const newKey = document.getElementById('songKey').value.trim();
+    const newYoutube = document.getElementById('songYoutube').value.trim();
+    const newBpm = parseFloat(document.getElementById('songBpm').value);
+    const newOffset = parseFloat(document.getElementById('songOffset').value);
+    const newAudited = document.getElementById('songAudited').checked;
+    
+    // Validate required fields
+    if (!newName) {
+        showToast('Song name is required', 'error');
+        return;
+    }
+    
+    if (!newKey) {
+        showToast('Key is required', 'error');
+        return;
+    }
+    
+    if (isNaN(newBpm) || newBpm <= 0) {
+        showToast('Valid BPM is required', 'error');
+        return;
+    }
+    
+    // Update song data
+    song.name = newName;
+    song.key = newKey;
+    song.youtube = newYoutube;
+    song.bpm = newBpm;
+    song.offset = isNaN(newOffset) ? undefined : newOffset;
+    song.isAudited = newAudited;
+    
+    // Update UI
+    renderSongList();
+    
+    // If this song is currently selected, update the player
+    if (currentSong && currentSong._name === currentEditingSong) {
+        currentSong = { _name: currentEditingSong, ...song };
+        
+        // Update song title in player header
+        const titleElement = document.getElementById("currentSongTitle");
+        if (titleElement) {
+            titleElement.textContent = song.name;
+        }
+        
+        // If YouTube URL changed, reload the player
+        const oldYoutube = currentSong.youtube;
+        if (newYoutube && newYoutube !== oldYoutube) {
+            initializePlayer(newYoutube);
+        }
+    }
+    
+    closeSongEditDialog();
+    showToast('Song updated successfully', 'success');
 }
 
 // Initialize app when DOM is loaded

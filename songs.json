@@ -690,10 +690,11 @@
       "G:maj"
     ],
     "name": "Back to December",
-    "key": "D",
+    "key": "D", 
     "youtube": "https://www.youtube.com/embed/QUwxKWT6m7U",
     "bpm": 142,
-    "offset": 8.18004
+    "offset": 8.18004,
+    "isAudited": true
   },
   "bau_troi_moi": {
     "chords": [
@@ -1090,7 +1091,8 @@
     "key": "F",
     "youtube": "https://www.youtube.com/embed/Z1D26z9l8y8",
     "bpm": 90,
-    "offset": 2.777700897003174
+    "offset": 2.777700897003174,
+    "isAudited": false
   },
   "dear_john": {
     "chords": [
@@ -1891,7 +1893,8 @@
     "name": "Dear John",
     "key": "E",
     "youtube": "https://www.youtube.com/embed/2tq1m0vU-m4",
-    "bpm": 119.5
+    "bpm": 119.5,
+    "isAudited": false
   },
   "enchanted": {
     "chords": [
